@@ -1,0 +1,1055 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>히트펌프 4방 밸브(4-Way Valve) 작동 원리 시뮬레이션</title>
+    <!-- Tailwind CSS for Modern UI -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Noto+Sans+KR:wght@300;400;500;700&display=swap');
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+        }
+        .code-font {
+            font-family: 'JetBrains Mono', monospace;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen flex flex-col selection:bg-teal-500 selection:text-slate-900">
+
+    <!-- Header -->
+    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur sticky top-0 z-50 px-6 py-4">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4">
+            <div class="flex items-center gap-3">
+                <div class="p-2 bg-teal-500/10 rounded-lg text-teal-400 border border-teal-500/20">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
+                    </svg>
+                </div>
+                <div>
+                    <h1 class="text-xl font-bold tracking-tight text-white">4방 밸브(4-Way Valve) 작동 원리 시뮬레이터</h1>
+                    <p class="text-xs text-slate-400 mt-0.5">히트펌프 사이클 제어 핵심 부품 인터랙티브 분석 도구</p>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-4">
+                <!-- Sound Toggle -->
+                <button id="soundToggle" class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/50 hover:bg-slate-800 text-slate-300 transition-colors text-sm">
+                    <span id="soundIcon">
+                        <!-- Sound ON (Default disabled until interaction) -->
+                        <svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" /></svg>
+                    </span>
+                    <span id="soundText">음향 꺼짐</span>
+                </button>
+                <div class="text-xs text-slate-400 text-right hidden sm:block">
+                    <span class="block text-slate-300">물리 모델 속도</span>
+                    <span class="code-font text-teal-400">60 FPS (Real-time)</span>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="flex-grow max-w-7xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+        
+        <!-- Left Column: Simulation Canvas (Lg: 8 cols) -->
+        <div class="lg:col-span-8 flex flex-col gap-4">
+            
+            <!-- Canvas Container -->
+            <div class="relative bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col">
+                <!-- Top Status Bar in Canvas -->
+                <div class="absolute top-4 left-4 right-4 flex justify-between items-center z-10 pointer-events-none">
+                    <div class="bg-slate-950/80 backdrop-blur-md border border-slate-800 rounded-lg px-3 py-1.5 flex items-center gap-2">
+                        <span id="statusIndicatorDot" class="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <span id="statusIndicatorText" class="text-xs font-semibold text-slate-200">냉방 모드 (정적 상태)</span>
+                    </div>
+                    <div class="bg-slate-950/80 backdrop-blur-md border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 flex gap-4">
+                        <div>솔레노이드 코일: <span id="coilStatus" class="font-bold text-red-400">OFF (무통전)</span></div>
+                    </div>
+                </div>
+
+                <!-- WebGL / 2D Canvas for physics -->
+                <div class="w-full overflow-x-auto flex justify-center bg-slate-950">
+                    <canvas id="simCanvas" width="800" height="560" class="block max-w-full h-auto"></canvas>
+                </div>
+
+                <!-- Bottom Gauge Overlay -->
+                <div class="border-t border-slate-800 bg-slate-900/60 p-4 grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div class="bg-slate-950/40 p-2.5 rounded-xl border border-slate-800/60">
+                        <div class="text-[10px] text-slate-500 font-medium">압축기 토출 온도 (Discharge Temp)</div>
+                        <div class="flex items-baseline gap-1 mt-0.5">
+                            <span id="gaugeDischargeTemp" class="text-lg font-bold code-font text-red-400">76.2</span>
+                            <span class="text-xs text-slate-400">°C</span>
+                        </div>
+                    </div>
+                    <div class="bg-slate-950/40 p-2.5 rounded-xl border border-slate-800/60">
+                        <div class="text-[10px] text-slate-500 font-medium">압축기 흡입 압력 (Suction Pressure)</div>
+                        <div class="flex items-baseline gap-1 mt-0.5">
+                            <span id="gaugeSuctionPress" class="text-lg font-bold code-font text-sky-400">0.51</span>
+                            <span class="text-xs text-slate-400">MPa</span>
+                        </div>
+                    </div>
+                    <div class="bg-slate-950/40 p-2.5 rounded-xl border border-slate-800/60">
+                        <div class="text-[10px] text-slate-500 font-medium">시스템 전력 소비량 (Power Load)</div>
+                        <div class="flex items-baseline gap-1 mt-0.5">
+                            <span id="gaugePowerLoad" class="text-lg font-bold code-font text-teal-400">2.14</span>
+                            <span class="text-xs text-slate-400">kW</span>
+                        </div>
+                    </div>
+                    <div class="bg-slate-950/40 p-2.5 rounded-xl border border-slate-800/60">
+                        <div class="text-[10px] text-slate-500 font-medium">냉방/난방 효율 (COP)</div>
+                        <div class="flex items-baseline gap-1 mt-0.5">
+                            <span id="gaugeCOP" class="text-lg font-bold code-font text-emerald-400">4.12</span>
+                            <span class="text-xs text-slate-400"></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Notice Panel for Intermediate / Bypass issues -->
+            <div id="bypassWarning" class="hidden p-4 bg-amber-500/10 border border-amber-500/20 text-amber-300 rounded-xl flex items-start gap-3 transition-opacity duration-300">
+                <svg class="w-5 h-5 mt-0.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                <div>
+                    <h4 class="text-sm font-semibold text-amber-200">주의: 과도 상태에서의 바이패스(Bypass) 발생</h4>
+                    <p class="text-xs text-amber-400/90 mt-1 leading-relaxed">
+                        밸브 슬라이더가 중심에 정렬되면 고온·고압 기체 냉매(토출선)가 냉각되지 않은 상태로 저압 흡입관으로 직접 우회 유입됩니다. 이로 인해 압축기 과부하 및 급격한 온도 상승이 나타납니다.
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Controls & Information (Lg: 4 cols) -->
+        <div class="lg:col-span-4 flex flex-col gap-6">
+            
+            <!-- Controls Card -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col gap-5">
+                <h3 class="text-base font-bold text-white flex items-center gap-2">
+                    <span class="w-1.5 h-4 bg-teal-500 rounded-full"></span>
+                    제어 및 모니터링
+                </h3>
+
+                <!-- Presets Buttons -->
+                <div class="flex flex-col gap-2">
+                    <span class="text-xs text-slate-400 font-medium">자동 전환 프리셋</span>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button id="btnCooling" class="px-4 py-2.5 rounded-xl bg-teal-500 text-slate-950 font-bold hover:bg-teal-400 transition-all text-sm shadow-lg shadow-teal-500/10">
+                            냉방 모드 (Cooling)
+                        </button>
+                        <button id="btnHeating" class="px-4 py-2.5 rounded-xl bg-slate-800 text-slate-200 font-bold hover:bg-slate-700 transition-all text-sm border border-slate-700">
+                            난방 모드 (Heating)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Slider Control -->
+                <div class="flex flex-col gap-2 pt-2 border-t border-slate-800/80">
+                    <div class="flex justify-between items-center text-xs">
+                        <span class="text-slate-400 font-medium">슬라이더 수동 제어</span>
+                        <span id="sliderValueText" class="code-font text-teal-400 font-bold">0% (냉방 극한)</span>
+                    </div>
+                    <input type="range" id="valveSlider" min="0" max="100" value="0" class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-teal-500 transition-all">
+                    <div class="flex justify-between text-[10px] text-slate-500 font-mono">
+                        <span>0% (냉방)</span>
+                        <span>50% (바이패스)</span>
+                        <span>100% (난방)</span>
+                    </div>
+                </div>
+
+                <!-- Details Panel -->
+                <div class="bg-slate-950/60 p-4 rounded-xl border border-slate-800/80 flex flex-col gap-3">
+                    <span class="text-xs font-semibold text-slate-300">현재 흐름 경로 매핑</span>
+                    
+                    <div class="flex flex-col gap-2 text-xs">
+                        <!-- Port 1: Discharge -->
+                        <div class="flex justify-between items-center py-1 border-b border-slate-900">
+                            <span class="text-slate-400">① 하단 토출구 (압축기 출구)</span>
+                            <span class="font-bold text-red-400 px-1.5 py-0.5 bg-red-500/10 rounded">고온 고압 가스</span>
+                        </div>
+                        <!-- Port 2: Suction -->
+                        <div class="flex justify-between items-center py-1 border-b border-slate-900">
+                            <span class="text-slate-400">② 상단 흡입구 (압축기 입구)</span>
+                            <span class="font-bold text-sky-400 px-1.5 py-0.5 bg-sky-500/10 rounded">저온 저압 가스</span>
+                        </div>
+                        <!-- Port 3: Indoor Unit -->
+                        <div class="flex justify-between items-center py-1 border-b border-slate-900">
+                            <span class="text-slate-400">③ 상단 좌측 (실내기 배관)</span>
+                            <span id="indoorStatusText" class="font-bold text-sky-400 px-1.5 py-0.5 bg-sky-500/10 rounded">증발기 역할 (저압)</span>
+                        </div>
+                        <!-- Port 4: Outdoor Unit -->
+                        <div class="flex justify-between items-center py-1">
+                            <span class="text-slate-400">④ 상단 우측 (실외기 배관)</span>
+                            <span id="outdoorStatusText" class="font-bold text-red-400 px-1.5 py-0.5 bg-red-500/10 rounded">응축기 역할 (고압)</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Informational Block -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl flex flex-col gap-3.5">
+                <h3 class="text-base font-bold text-white flex items-center gap-2">
+                    <span class="w-1.5 h-4 bg-teal-500 rounded-full"></span>
+                    기계식 원리 설명
+                </h3>
+                <div class="text-xs text-slate-400 leading-relaxed flex flex-col gap-3">
+                    <p>
+                        4방 밸브는 실외에 장착된 소형 솔레노이드(파일럿) 밸브에 전원을 인가하거나 차단함으로써, 양쪽 제어 챔버의 압력 차이를 발생시켜 내부 피스톤 슬라이더를 물리적으로 이동시키는 장치입니다.
+                    </p>
+                    <div class="p-3 bg-slate-950/40 rounded-xl border border-slate-800/60 flex flex-col gap-1 text-[11px]">
+                        <span class="font-bold text-slate-300 block mb-1">모드 변환 메커니즘:</span>
+                        <span class="text-sky-400">● 냉방 모드 (Solenoid OFF)</span>
+                        <span class="pl-3">내부 U-cup 슬라이더가 좌측에 위치하여 실내기 배관을 압축기 흡입선과 연결(실내 냉방 실현).</span>
+                        <span class="text-red-400 mt-1">● 난방 모드 (Solenoid ON)</span>
+                        <span class="pl-3">파일럿 밸브에 의해 고압 냉매가 좌측 챔버로 밀려들어 슬라이더가 우측으로 이동, 실내기를 고온 고압 토출선에 직접 연결하여 실내 난방 실현.</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="border-t border-slate-900 bg-slate-950 px-6 py-4 text-center text-xs text-slate-500">
+        <div class="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-2">
+            <div>© 2026 4-Way Reversing Valve Simulator. All rights reserved.</div>
+            <div class="code-font text-slate-600">Visualized Engine v2.5 (Custom Canvas Pipeline)</div>
+        </div>
+    </footer>
+
+    <!-- JS Logic -->
+    <script>
+        // --- 1. Sound Engine (Web Audio API) ---
+        let audioCtx = null;
+        let soundEnabled = false;
+        let hissGain = null;
+        let clickOsc = null;
+
+        function initAudio() {
+            if (audioCtx) return;
+            try {
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                audioCtx = new AudioContextClass();
+                
+                // Continuous background gas flowing noise (Hiss)
+                const bufferSize = 2 * audioCtx.sampleRate;
+                const noiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+                const output = noiseBuffer.getChannelData(0);
+                for (let i = 0; i < bufferSize; i++) {
+                    output[i] = Math.random() * 2 - 1;
+                }
+
+                const whiteNoise = audioCtx.createBufferSource();
+                whiteNoise.buffer = noiseBuffer;
+                whiteNoise.loop = true;
+
+                // Highpass filter for standard gas flow hiss sound
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = 'highpass';
+                filter.frequency.value = 1200;
+
+                hissGain = audioCtx.createGain();
+                hissGain.gain.setValueAtTime(0.01, audioCtx.currentTime);
+
+                whiteNoise.connect(filter);
+                filter.connect(hissGain);
+                hissGain.connect(audioCtx.destination);
+                whiteNoise.start();
+                
+                soundEnabled = true;
+                updateSoundButtonUI();
+            } catch (e) {
+                console.error("Web Audio API is not supported", e);
+            }
+        }
+
+        function playClunkSound() {
+            if (!audioCtx || !soundEnabled) return;
+            
+            // Re-activate if suspended (browser security rules)
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume();
+            }
+
+            // Low frequency thud/clunk when valve hits end stops
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            
+            osc.type = 'triangle';
+            osc.frequency.setValueAtTime(140, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(35, audioCtx.currentTime + 0.15);
+            
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+            
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.2);
+        }
+
+        function updateHissVolume(val) {
+            if (!audioCtx || !soundEnabled || !hissGain) return;
+            // Louder hiss sound during the bypass/transition state (around 50%)
+            const distanceToCenter = Math.abs(val - 0.5);
+            const intensity = 1.0 - Math.min(1.0, distanceToCenter * 2); // 1.0 at center, 0 at outer edges
+            
+            // Map to gain value
+            const minGain = 0.01;
+            const maxGain = 0.08;
+            const currentGain = minGain + (maxGain - minGain) * intensity;
+            hissGain.gain.setTargetAtTime(currentGain, audioCtx.currentTime, 0.1);
+        }
+
+        const soundToggleBtn = document.getElementById('soundToggle');
+        const soundIcon = document.getElementById('soundIcon');
+        const soundText = document.getElementById('soundText');
+
+        function updateSoundButtonUI() {
+            if (soundEnabled) {
+                soundIcon.innerHTML = `<svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>`;
+                soundText.innerText = "음향 켜짐";
+            } else {
+                soundIcon.innerHTML = `<svg class="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" /></svg>`;
+                soundText.innerText = "음향 꺼짐";
+            }
+        }
+
+        soundToggleBtn.addEventListener('click', () => {
+            if (!audioCtx) {
+                initAudio();
+            } else {
+                soundEnabled = !soundEnabled;
+                if (!soundEnabled && hissGain) {
+                    hissGain.gain.setValueAtTime(0, audioCtx.currentTime);
+                } else if (soundEnabled && hissGain) {
+                    hissGain.gain.setValueAtTime(0.01, audioCtx.currentTime);
+                }
+                updateSoundButtonUI();
+            }
+        });
+
+
+        // --- 2. Simulation Engine ---
+        const canvas = document.getElementById('simCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // State Machine
+        const state = {
+            slideVal: 0.0,         // Current slider visual value (0.0 = Cooling, 1.0 = Heating)
+            targetSlideVal: 0.0,   // Intended value to slide towards
+            solenoidActive: false, // Pilot solenoid power state
+            lastEmittedSlideVal: 0.0,
+            hasPlayedClunk: true
+        };
+
+        // Telemetry Data (Realistic calculations based on slide val)
+        const telemetry = {
+            dischargeTemp: 76.2,
+            suctionPress: 0.51,
+            powerLoad: 2.14,
+            cop: 4.12
+        };
+
+        // UI Element References
+        const valveSlider = document.getElementById('valveSlider');
+        const sliderValueText = document.getElementById('sliderValueText');
+        const btnCooling = document.getElementById('btnCooling');
+        const btnHeating = document.getElementById('btnHeating');
+        
+        const gaugeDischargeTemp = document.getElementById('gaugeDischargeTemp');
+        const gaugeSuctionPress = document.getElementById('gaugeSuctionPress');
+        const gaugePowerLoad = document.getElementById('gaugePowerLoad');
+        const gaugeCOP = document.getElementById('gaugeCOP');
+
+        const indoorStatusText = document.getElementById('indoorStatusText');
+        const outdoorStatusText = document.getElementById('outdoorStatusText');
+        const statusIndicatorText = document.getElementById('statusIndicatorText');
+        const statusIndicatorDot = document.getElementById('statusIndicatorDot');
+        const coilStatusText = document.getElementById('coilStatus');
+        const bypassWarning = document.getElementById('bypassWarning');
+
+        // Particle Storage array
+        const particles = [];
+
+        // Helper: Mix 2 hex colors (or rgb)
+        function getMixedColor(val) {
+            // Returns gradient between pure red and pure blue, blending to violet in the middle
+            const red = Math.floor((1 - val) * 59 + val * 239);
+            const green = Math.floor((1 - val) * 130 + val * 68);
+            const blue = Math.floor((1 - val) * 246 + val * 68);
+            return `rgba(${red}, ${green}, ${blue}, 0.8)`;
+        }
+
+        // Waypoints Generators for Flow Paths
+        // Top Left Pipe is at X=260, Top Middle is X=400, Top Right is X=540
+        // Bottom Inlet Pipe is at X=400, Y=470
+        // Valve Body bounds: X from 180 to 620, Y from 255 to 365 (Center Y=310)
+
+        function getBottomToRightPath(randOffset) {
+            return [
+                {x: 400 + randOffset, y: 510}, // Start at compressor discharge
+                {x: 400 + randOffset, y: 345}, // Main chamber entry
+                {x: 470, y: 310},             // Move right in chamber bypass
+                {x: 540 + randOffset, y: 310}, // Align with Top Right Pipe
+                {x: 540 + randOffset, y: 40}   // Exit to outdoor unit
+            ];
+        }
+
+        // Left Path from Bottom Connection
+        function getBottomToLeftPath(randOffset) {
+            return [
+                {x: 400 + randOffset, y: 510}, // Start at compressor discharge
+                {x: 400 + randOffset, y: 345}, // Main chamber entry
+                {x: 330, y: 310},             // Move left in chamber bypass
+                {x: 260 + randOffset, y: 310}, // Align with Top Left Pipe
+                {x: 260 + randOffset, y: 40}   // Exit to indoor unit
+            ];
+        }
+
+        function getLeftToMiddlePath(randOffset, currentBlockX) {
+            return [
+                {x: 260 + randOffset, y: 40},  // Enter from indoor unit (evaporator suction)
+                {x: 260 + randOffset, y: 295}, // Drop into Left port
+                {x: currentBlockX - 25, y: 335}, // Swoop through cup bottom
+                {x: 400 + randOffset, y: 295}, // Up into Middle suction port
+                {x: 400 + randOffset, y: 40}   // Exit to Compressor Suction
+            ];
+        }
+
+        function getRightToMiddlePath(randOffset, currentBlockX) {
+            return [
+                {x: 540 + randOffset, y: 40},  // Enter from outdoor unit (suction)
+                {x: 540 + randOffset, y: 295}, // Drop into Right port
+                {x: currentBlockX + 25, y: 335}, // Swoop through cup bottom
+                {x: 400 + randOffset, y: 295}, // Up into Middle suction port
+                {x: 400 + randOffset, y: 40}   // Exit to Compressor Suction
+            ];
+        }
+
+        // Pure Direct short-circuit path (Bypass) when slider is centered
+        function getBypassPath(randOffset) {
+            return [
+                {x: 400 + randOffset, y: 510}, // Start at compressor discharge
+                {x: 400 + randOffset, y: 295}, // Blow directly up past slide block seals
+                {x: 400 + randOffset, y: 40}   // Up directly into Suction line
+            ];
+        }
+
+        class Particle {
+            constructor(type, path, speed) {
+                this.type = type; // 'red' (high temp gas), 'blue' (low temp gas), 'bypass' (hybrid)
+                this.path = path;
+                this.speed = speed;
+                this.currentWaypoint = 0;
+                this.x = path[0].x;
+                this.y = path[0].y;
+                this.size = 2.5 + Math.random() * 2.5;
+                this.alpha = 1.0;
+            }
+
+            update() {
+                if (this.currentWaypoint >= this.path.length - 1) return false;
+
+                const target = this.path[this.currentWaypoint + 1];
+                const dx = target.x - this.x;
+                const dy = target.y - this.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+
+                if (dist < this.speed) {
+                    this.currentWaypoint++;
+                    if (this.currentWaypoint >= this.path.length - 1) {
+                        return false; // Reached end, remove
+                    }
+                } else {
+                    this.x += (dx / dist) * this.speed;
+                    this.y += (dy / dist) * this.speed;
+                }
+
+                // Fade out near the exit
+                if (this.currentWaypoint === this.path.length - 2) {
+                    const finalSegmentDist = Math.sqrt(
+                        Math.pow(this.path[this.path.length - 1].x - this.x, 2) + 
+                        Math.pow(this.path[this.path.length - 1].y - this.y, 2)
+                    );
+                    this.alpha = Math.max(0, Math.min(1.0, finalSegmentDist / 80));
+                }
+
+                return true;
+            }
+
+            draw() {
+                ctx.save();
+                ctx.globalAlpha = this.alpha;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+
+                if (this.type === 'red') {
+                    ctx.fillStyle = `rgba(239, 68, 68, ${this.alpha})`; // neon red
+                    ctx.shadowColor = 'rgba(239, 68, 68, 0.6)';
+                } else if (this.type === 'blue') {
+                    ctx.fillStyle = `rgba(59, 130, 246, ${this.alpha})`; // neon blue
+                    ctx.shadowColor = 'rgba(59, 130, 246, 0.6)';
+                } else {
+                    // Bypass transitions Red -> Purple -> Blue along the y path
+                    const travelPercent = Math.max(0, Math.min(1.0, (this.y - 40) / 470));
+                    ctx.fillStyle = getMixedColor(travelPercent);
+                    ctx.shadowColor = getMixedColor(travelPercent);
+                }
+
+                ctx.shadowBlur = 4;
+                ctx.fill();
+                ctx.restore();
+            }
+        }
+
+        // Particle spawning rate based on state
+        function spawnRefrigerantParticles() {
+            const currentBlockX = 330 + 140 * state.slideVal;
+            const randOffset = () => (Math.random() - 0.5) * 22; // Keep flow within pipes (width: ~30px)
+
+            // Flow rates dependent on sliding position
+            const flowRateRedToRight = Math.max(0, 1.0 - state.slideVal * 2.0); // Dominates on the left
+            const flowRateRedToLeft = Math.max(0, (state.slideVal - 0.5) * 2.0); // Dominates on the right
+            
+            const flowRateBlueLeftToMiddle = Math.max(0, 1.0 - state.slideVal * 2.0);
+            const flowRateBlueRightToMiddle = Math.max(0, (state.slideVal - 0.5) * 2.0);
+
+            // Bypass flow rate is highest in the dead middle (state.slideVal = 0.5)
+            const flowRateBypass = Math.max(0, 1.0 - Math.abs(state.slideVal - 0.5) * 4.0);
+
+            const speedBase = 2.5;
+
+            // 1. Red paths (High Pressure Discharge from Bottom)
+            if (Math.random() < flowRateRedToRight && state.slideVal < 0.45) {
+                particles.push(new Particle('red', getBottomToRightPath(randOffset()), speedBase + Math.random()));
+            }
+            if (Math.random() < flowRateRedToLeft && state.slideVal > 0.55) {
+                particles.push(new Particle('red', getBottomToLeftPath(randOffset()), speedBase + Math.random()));
+            }
+
+            // 2. Blue paths (Suction return back to compressor inlet)
+            if (Math.random() < flowRateBlueLeftToMiddle && state.slideVal < 0.45) {
+                particles.push(new Particle('blue', getLeftToMiddlePath(randOffset(), currentBlockX), speedBase + Math.random()));
+            }
+            if (Math.random() < flowRateBlueRightToMiddle && state.slideVal > 0.55) {
+                particles.push(new Particle('blue', getRightToMiddlePath(randOffset(), currentBlockX), speedBase + Math.random()));
+            }
+
+            // 3. Bypass leak path (Direct short-circuit)
+            if (Math.random() < flowRateBypass * 1.5) {
+                particles.push(new Particle('bypass', getBypassPath(randOffset()), speedBase * 1.2 + Math.random()));
+            }
+        }
+
+
+        // --- 3. Render and Animation Pipeline ---
+        function drawBackground() {
+            // Deep sleek tech grid background
+            ctx.fillStyle = '#090d16';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.02)';
+            ctx.lineWidth = 1;
+            const gridSize = 40;
+            for (let x = 0; x < canvas.width; x += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, canvas.height);
+                ctx.stroke();
+            }
+            for (let y = 0; y < canvas.height; y += gridSize) {
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(canvas.width, y);
+                ctx.stroke();
+            }
+        }
+
+        function drawPipes() {
+            ctx.save();
+            ctx.lineWidth = 36; // Pipe diameter
+            ctx.lineCap = 'square';
+
+            // Glow logic for active lines (Red = High temp, Blue = Low temp)
+            const strokeGradient = (x1, y1, x2, y2, cStart, cEnd) => {
+                const grad = ctx.createLinearGradient(x1, y1, x2, y2);
+                grad.addColorStop(0, cStart);
+                grad.addColorStop(1, cEnd);
+                return grad;
+            };
+
+            // Pipe Base Color Definitions
+            const brassBase = '#432a18';
+            const brassHighlight = '#bc9363';
+            const bluePipe = '#1e3a8a';
+            const redPipe = '#7f1d1d';
+
+            // Bottom Pipe (Compressor Discharge - ALWAYS RED/HIGH TEMP)
+            ctx.strokeStyle = '#3a2015'; // Outer pipe structure outline
+            ctx.lineWidth = 44;
+            ctx.beginPath(); ctx.moveTo(400, 310); ctx.lineTo(400, 520); ctx.stroke();
+            
+            ctx.strokeStyle = strokeGradient(400, 510, 400, 310, 'rgba(239, 68, 68, 0.45)', 'rgba(220, 38, 38, 0.9)');
+            ctx.lineWidth = 30;
+            ctx.beginPath(); ctx.moveTo(400, 310); ctx.lineTo(400, 520); ctx.stroke();
+
+            // Top Middle Pipe (Compressor Suction - ALWAYS BLUE/LOW TEMP)
+            ctx.strokeStyle = '#22324e';
+            ctx.lineWidth = 44;
+            ctx.beginPath(); ctx.moveTo(400, 310); ctx.lineTo(400, 40); ctx.stroke();
+
+            // Dynamic color shift during bypass (gets purple-hot in the suction pipe due to high-temp leak)
+            const bypassIntensity = Math.max(0, 1.0 - Math.abs(state.slideVal - 0.5) * 4.0);
+            const suctionColor = getMixedColor(bypassIntensity * 0.7);
+
+            ctx.strokeStyle = suctionColor;
+            ctx.lineWidth = 30;
+            ctx.beginPath(); ctx.moveTo(400, 310); ctx.lineTo(400, 40); ctx.stroke();
+
+            // Top Left Pipe (Indoor Connection) - Active Low in Cooling, High in Heating
+            ctx.strokeStyle = '#2e3a4e';
+            ctx.lineWidth = 44;
+            ctx.beginPath(); ctx.moveTo(260, 310); ctx.lineTo(260, 40); ctx.stroke();
+
+            ctx.strokeStyle = getMixedColor(state.slideVal); // Transitions blue->red
+            ctx.lineWidth = 30;
+            ctx.beginPath(); ctx.moveTo(260, 310); ctx.lineTo(260, 40); ctx.stroke();
+
+            // Top Right Pipe (Outdoor Connection) - Active High in Cooling, Low in Heating
+            ctx.strokeStyle = '#2e3a4e';
+            ctx.lineWidth = 44;
+            ctx.beginPath(); ctx.moveTo(540, 310); ctx.lineTo(540, 40); ctx.stroke();
+
+            ctx.strokeStyle = getMixedColor(1.0 - state.slideVal); // Transitions red->blue
+            ctx.lineWidth = 30;
+            ctx.beginPath(); ctx.moveTo(540, 310); ctx.lineTo(540, 40); ctx.stroke();
+
+            // Draw Pipe metallic center highlight overlays
+            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+            ctx.beginPath(); ctx.moveTo(260, 40); ctx.lineTo(260, 300); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(400, 40); ctx.lineTo(400, 300); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(540, 40); ctx.lineTo(540, 300); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(400, 320); ctx.lineTo(400, 520); ctx.stroke();
+
+            ctx.restore();
+        }
+
+        function drawMainCylinder() {
+            ctx.save();
+            
+            // Draw Pilot Capillary Control Tubes first (so they render behind the main body)
+            drawPilotTubes();
+
+            // Draw Outer brass valve cylinder main body
+            const cylinderY = 310;
+            const radius = 55;
+            const length = 460;
+            const startX = 400 - length/2; // 170
+            const endX = 400 + length/2;   // 630
+
+            // Base Metallic gradient
+            const metalGrad = ctx.createLinearGradient(startX, cylinderY - radius, startX, cylinderY + radius);
+            metalGrad.addColorStop(0, '#58432a'); // Aged Brass
+            metalGrad.addColorStop(0.2, '#bc9363'); // polished highlighting
+            metalGrad.addColorStop(0.5, '#745433');
+            metalGrad.addColorStop(0.8, '#4a331e');
+            metalGrad.addColorStop(1, '#2c1e11');
+
+            ctx.lineWidth = 1;
+            ctx.fillStyle = metalGrad;
+            ctx.strokeStyle = '#231508';
+
+            // Main cylindrical body capsule
+            ctx.beginPath();
+            ctx.roundRect(startX, cylinderY - radius, length, radius * 2, 8);
+            ctx.fill();
+            ctx.stroke();
+
+            // Weld/Clamp rings (Structural reinforcement bands on real valves)
+            ctx.fillStyle = 'rgba(212, 175, 55, 0.45)';
+            ctx.fillRect(250, cylinderY - radius - 2, 20, radius * 2 + 4);
+            ctx.fillRect(390, cylinderY - radius - 2, 20, radius * 2 + 4);
+            ctx.fillRect(530, cylinderY - radius - 2, 20, radius * 2 + 4);
+
+            // Left & Right Cap Ends of Valve Chambers
+            ctx.fillStyle = '#2d1e13';
+            ctx.beginPath();
+            ctx.arc(startX, cylinderY, radius, Math.PI/2, Math.PI * 1.5);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.beginPath();
+            ctx.arc(endX, cylinderY, radius, Math.PI * 1.5, Math.PI/2);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        function drawPilotTubes() {
+            // Drawing the Solenoid pilot system on top (extremely educational)
+            ctx.save();
+            ctx.lineWidth = 6;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+
+            // Color profiles for control lines depending on solenoid energization
+            const redGlow = 'rgba(239, 68, 68, 0.95)';
+            const blueGlow = 'rgba(59, 130, 246, 0.95)';
+
+            const leftChamberColor = getMixedColor(state.slideVal); // Ramping pressure
+            const rightChamberColor = getMixedColor(1.0 - state.slideVal); // Depressurizing
+
+            // Pilot Valve Body drawing
+            const pvX = 400;
+            const pvY = 160;
+
+            // Tube 1: Left End-cap of cylinder to Left side of Pilot Valve
+            ctx.strokeStyle = '#222';
+            ctx.lineWidth = 8;
+            ctx.beginPath();
+            ctx.moveTo(175, 310);
+            ctx.lineTo(175, 180);
+            ctx.lineTo(pvX - 40, 180);
+            ctx.lineTo(pvX - 40, pvY);
+            ctx.stroke();
+
+            ctx.strokeStyle = leftChamberColor;
+            ctx.lineWidth = 4;
+            ctx.stroke();
+
+            // Tube 2: Right End-cap of cylinder to Right side of Pilot Valve
+            ctx.strokeStyle = '#222';
+            ctx.lineWidth = 8;
+            ctx.beginPath();
+            ctx.moveTo(625, 310);
+            ctx.lineTo(625, 180);
+            ctx.lineTo(pvX + 40, 180);
+            ctx.lineTo(pvX + 40, pvY);
+            ctx.stroke();
+
+            ctx.strokeStyle = rightChamberColor;
+            ctx.lineWidth = 4;
+            ctx.stroke();
+
+            // Tube 3: Central Bleed line directly connected to High-pressure inlet
+            ctx.strokeStyle = '#222';
+            ctx.lineWidth = 8;
+            ctx.beginPath();
+            ctx.moveTo(385, 310);
+            ctx.bezierCurveTo(340, 280, 340, 190, pvX - 10, 160);
+            ctx.stroke();
+
+            ctx.strokeStyle = redGlow;
+            ctx.lineWidth = 4;
+            ctx.stroke();
+
+            // Tube 4: Exhaust discharge connected to compressor suction (Low Press line)
+            ctx.strokeStyle = '#222';
+            ctx.lineWidth = 8;
+            ctx.beginPath();
+            ctx.moveTo(pvX, pvY);
+            ctx.lineTo(415, 120);
+            ctx.lineTo(415, 60);
+            ctx.stroke();
+
+            ctx.strokeStyle = blueGlow;
+            ctx.lineWidth = 4;
+            ctx.stroke();
+
+            // Draw Solenoid Housing block
+            ctx.fillStyle = '#1e293b';
+            ctx.strokeStyle = '#475569';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.roundRect(pvX - 60, pvY - 15, 120, 30, 4);
+            ctx.fill();
+            ctx.stroke();
+
+            // Solenoid Copper Coil drawing on the end (energized indicator)
+            const coilGrad = ctx.createLinearGradient(pvX + 30, pvY - 20, pvX + 55, pvY + 20);
+            if (state.solenoidActive) {
+                coilGrad.addColorStop(0, '#f97316'); // Glowing orange
+                coilGrad.addColorStop(0.5, '#ea580c');
+                coilGrad.addColorStop(1, '#ffedd5');
+            } else {
+                coilGrad.addColorStop(0, '#78350f'); // Dull dark copper
+                coilGrad.addColorStop(0.5, '#451a03');
+                coilGrad.addColorStop(1, '#9a3412');
+            }
+            ctx.fillStyle = coilGrad;
+            ctx.beginPath();
+            ctx.roundRect(pvX + 25, pvY - 20, 30, 40, 3);
+            ctx.fill();
+            ctx.stroke();
+
+            // Label Solenoid state
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 9px system-ui';
+            ctx.fillText("PILOT VALVE", pvX - 50, pvY + 4);
+
+            ctx.restore();
+        }
+
+        function drawPistonAndSlider() {
+            // Main moving internal components inside 4-way valve body
+            // This is mechanical assembly: Left piston, slider bar, U-shaped sliding block (cup), Right piston
+            ctx.save();
+
+            // Slider horizontal progress calculation
+            const sliderX = 330 + 140 * state.slideVal; 
+            
+            // Draw internal rod connecting pistons
+            ctx.strokeStyle = '#64748b';
+            ctx.lineWidth = 8;
+            ctx.beginPath();
+            ctx.moveTo(sliderX - 110, 310);
+            ctx.lineTo(sliderX + 110, 310);
+            ctx.stroke();
+
+            // Draw Left piston assembly
+            const drawPistonPart = (x) => {
+                ctx.fillStyle = '#1e293b';
+                ctx.strokeStyle = '#475569';
+                ctx.lineWidth = 2;
+                // Outer rubber gaskets
+                ctx.beginPath();
+                ctx.roundRect(x - 12, 310 - 46, 24, 92, 4);
+                ctx.fill();
+                ctx.stroke();
+
+                // Brass faceplate elements
+                ctx.fillStyle = '#b45309';
+                ctx.fillRect(x - 4, 310 - 40, 8, 80);
+            };
+
+            drawPistonPart(sliderX - 110);
+            drawPistonPart(sliderX + 110);
+
+            // Draw U-cup sliding block underneath the slider
+            // Size of block: covering 2 adjacent ports. Bottom-to-middle connects via this cup.
+            // When slideVal = 0 (Left): Centers at X = 330 (connecting Left=260 and Middle=400)
+            // When slideVal = 1 (Right): Centers at X = 470 (connecting Middle=400 and Right=540)
+            
+            // Draw the heavy cast-iron slider bracket that sits above the cup
+            ctx.fillStyle = '#475569';
+            ctx.beginPath();
+            ctx.roundRect(sliderX - 85, 310 - 15, 170, 25, 4);
+            ctx.fill();
+
+            // Draw Inner U-cup channel guide (refrigerant bridge)
+            const cupGrad = ctx.createLinearGradient(sliderX - 75, 320, sliderX + 75, 360);
+            cupGrad.addColorStop(0, '#1e293b');
+            cupGrad.addColorStop(0.5, '#475569');
+            cupGrad.addColorStop(1, '#0f172a');
+            
+            ctx.fillStyle = cupGrad;
+            ctx.strokeStyle = '#94a3b8';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            // Complex shape representing 3D internal cup chamber
+            ctx.moveTo(sliderX - 75, 310 + 5);
+            ctx.quadraticCurveTo(sliderX - 60, 310 + 50, sliderX, 310 + 50);
+            ctx.quadraticCurveTo(sliderX + 60, 310 + 50, sliderX + 75, 310 + 5);
+            ctx.lineTo(sliderX + 65, 310 + 5);
+            ctx.quadraticCurveTo(sliderX + 50, 310 + 38, sliderX, 310 + 38);
+            ctx.quadraticCurveTo(sliderX - 50, 310 + 38, sliderX - 65, 310 + 5);
+            ctx.closePath();
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        function drawOverlayLabels() {
+            ctx.save();
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = 'bold 11px system-ui';
+            ctx.textAlign = 'center';
+
+            // Compressor Discharge label
+            ctx.fillText("압축기 출구", 400, 545);
+            ctx.font = '9px monospace';
+            ctx.fillText("COMPRESSOR OUT (HIGH PRESS)", 400, 555);
+
+            // Left Top Label
+            ctx.font = 'bold 11px system-ui';
+            ctx.fillText("실내기 열교환기 배관", 260, 15);
+            ctx.font = '9px monospace';
+            ctx.fillText("INDOOR HEAT EXCHANGER", 260, 25);
+
+            // Middle Top Label
+            ctx.font = 'bold 11px system-ui';
+            ctx.fillText("압축기 흡입 (입구)", 400, 15);
+            ctx.font = '9px monospace';
+            ctx.fillText("COMPRESSOR SUCTION (LOW)", 400, 25);
+
+            // Right Top Label
+            ctx.font = 'bold 11px system-ui';
+            ctx.fillText("실외기 열교환기 배관", 540, 15);
+            ctx.font = '9px monospace';
+            ctx.fillText("OUTDOOR HEAT EXCHANGER", 540, 25);
+
+            ctx.restore();
+        }
+
+        // Sim loop logic
+        function updateTelemetryAndUI() {
+            // Target sliding logic (smooth physical mass sliding simulation)
+            const slideStep = 0.015; // Speed of piston movement
+            if (state.slideVal < state.targetSlideVal) {
+                state.slideVal = Math.min(state.targetSlideVal, state.slideVal + slideStep);
+            } else if (state.slideVal > state.targetSlideVal) {
+                state.slideVal = Math.max(state.targetSlideVal, state.slideVal - slideStep);
+            }
+
+            // Play clunk sound when sliders hit stops
+            if ((state.slideVal === 0.0 || state.slideVal === 1.0) && !state.hasPlayedClunk) {
+                playClunkSound();
+                state.hasPlayedClunk = true;
+            } else if (state.slideVal > 0.05 && state.slideVal < 0.95) {
+                state.hasPlayedClunk = false;
+            }
+
+            // Active updating of continuous hiss sound
+            updateHissVolume(state.slideVal);
+
+            // Map physical calculations during transition
+            const centerDistance = Math.abs(state.slideVal - 0.5); // 0 at center, 0.5 at end points
+            const isTransitioning = centerDistance < 0.45;
+            const bypassRatio = Math.max(0, 1.0 - centerDistance * 2.5); // Peak bypass at 0.5
+
+            // Telemetry Equations
+            telemetry.dischargeTemp = (75.5 + bypassRatio * 18.3).toFixed(1);
+            telemetry.suctionPress = (0.50 + bypassRatio * 0.72).toFixed(2);
+            telemetry.powerLoad = (2.12 + bypassRatio * 1.45).toFixed(2);
+            telemetry.cop = (4.20 * (1.0 - bypassRatio * 0.85)).toFixed(2);
+
+            // Update DOM telemetry cards
+            gaugeDischargeTemp.innerText = telemetry.dischargeTemp;
+            gaugeSuctionPress.innerText = telemetry.suctionPress;
+            gaugePowerLoad.innerText = telemetry.powerLoad;
+            gaugeCOP.innerText = telemetry.cop;
+
+            // Highlight alerts if bypass is happening
+            if (bypassRatio > 0.15) {
+                bypassWarning.classList.remove('hidden');
+            } else {
+                bypassWarning.classList.add('hidden');
+            }
+
+            // Sync visual element statuses
+            const sliderPercentage = Math.round(state.slideVal * 100);
+            
+            // Solenoid State
+            if (state.solenoidActive) {
+                coilStatusText.innerText = "ON (통전 중)";
+                coilStatusText.className = "font-bold text-emerald-400";
+            } else {
+                coilStatusText.innerText = "OFF (무통전)";
+                coilStatusText.className = "font-bold text-red-400";
+            }
+
+            // Mode visual statuses mapping
+            if (sliderPercentage === 0) {
+                sliderValueText.innerText = `0% (냉방 모드)`;
+                statusIndicatorText.innerText = "냉방 모드 (정적 상태)";
+                statusIndicatorDot.className = "w-2.5 h-2.5 rounded-full bg-sky-500 animate-pulse";
+                indoorStatusText.innerText = "증발기 역할 (저압)";
+                indoorStatusText.className = "font-bold text-sky-400 px-1.5 py-0.5 bg-sky-500/10 rounded";
+                outdoorStatusText.innerText = "응축기 역할 (고압)";
+                outdoorStatusText.className = "font-bold text-red-400 px-1.5 py-0.5 bg-red-500/10 rounded";
+            } else if (sliderPercentage === 100) {
+                sliderValueText.innerText = `100% (난방 모드)`;
+                statusIndicatorText.innerText = "난방 모드 (정적 상태)";
+                statusIndicatorDot.className = "w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse";
+                indoorStatusText.innerText = "응축기 역할 (고압)";
+                indoorStatusText.className = "font-bold text-red-400 px-1.5 py-0.5 bg-red-500/10 rounded";
+                outdoorStatusText.innerText = "증발기 역할 (저압)";
+                outdoorStatusText.className = "font-bold text-sky-400 px-1.5 py-0.5 bg-sky-500/10 rounded";
+            } else {
+                sliderValueText.innerText = `${sliderPercentage}% (전환 조절 중)`;
+                statusIndicatorText.innerText = "모드 전환 작동 진행 중";
+                statusIndicatorDot.className = "w-2.5 h-2.5 rounded-full bg-amber-500 animate-ping";
+                indoorStatusText.innerText = "전환 중 (유동 혼합)";
+                indoorStatusText.className = "font-bold text-amber-400 px-1.5 py-0.5 bg-amber-500/10 rounded";
+                outdoorStatusText.innerText = "전환 중 (유동 혼합)";
+                outdoorStatusText.className = "font-bold text-amber-400 px-1.5 py-0.5 bg-amber-500/10 rounded";
+            }
+
+            // Keep HTML slider input in sync with animation state
+            valveSlider.value = sliderPercentage;
+        }
+
+        function animationLoop() {
+            // 1. Calculations & Telemetry
+            updateTelemetryAndUI();
+
+            // 2. Refresh Screen
+            drawBackground();
+            drawPipes();
+            
+            // 3. Spawns and manages fluid dynamic elements (Particles)
+            spawnRefrigerantParticles();
+
+            for (let i = particles.length - 1; i >= 0; i--) {
+                const p = particles[i];
+                if (p.update()) {
+                    p.draw();
+                } else {
+                    particles.splice(i, 1);
+                }
+            }
+
+            // 4. Draw Valve overlay blocks over particles
+            drawMainCylinder();
+            drawPistonAndSlider();
+            drawOverlayLabels();
+
+            requestAnimationFrame(animationLoop);
+        }
+
+
+        // --- 4. User Interaction Interfaces ---
+        valveSlider.addEventListener('input', (e) => {
+            initAudio(); // Initialize audio node on first user slide interaction
+            const val = parseFloat(e.target.value) / 100.0;
+            state.targetSlideVal = val;
+            
+            // Manual control disables preset lock state
+            state.solenoidActive = val >= 0.5;
+            
+            // Style update
+            if (state.solenoidActive) {
+                btnHeating.className = "px-4 py-2.5 rounded-xl bg-red-500 text-slate-950 font-bold hover:bg-red-400 transition-all text-sm shadow-lg shadow-red-500/10";
+                btnCooling.className = "px-4 py-2.5 rounded-xl bg-slate-800 text-slate-200 font-bold hover:bg-slate-700 transition-all text-sm border border-slate-700";
+            } else {
+                btnCooling.className = "px-4 py-2.5 rounded-xl bg-teal-500 text-slate-950 font-bold hover:bg-teal-400 transition-all text-sm shadow-lg shadow-teal-500/10";
+                btnHeating.className = "px-4 py-2.5 rounded-xl bg-slate-800 text-slate-200 font-bold hover:bg-slate-700 transition-all text-sm border border-slate-700";
+            }
+        });
+
+        btnCooling.addEventListener('click', () => {
+            initAudio();
+            state.targetSlideVal = 0.0;
+            state.solenoidActive = false;
+            btnCooling.className = "px-4 py-2.5 rounded-xl bg-teal-500 text-slate-950 font-bold hover:bg-teal-400 transition-all text-sm shadow-lg shadow-teal-500/10";
+            btnHeating.className = "px-4 py-2.5 rounded-xl bg-slate-800 text-slate-200 font-bold hover:bg-slate-700 transition-all text-sm border border-slate-700";
+        });
+
+        btnHeating.addEventListener('click', () => {
+            initAudio();
+            state.targetSlideVal = 1.0;
+            state.solenoidActive = true;
+            btnHeating.className = "px-4 py-2.5 rounded-xl bg-red-500 text-slate-950 font-bold hover:bg-red-400 transition-all text-sm shadow-lg shadow-red-500/10";
+            btnCooling.className = "px-4 py-2.5 rounded-xl bg-slate-800 text-slate-200 font-bold hover:bg-slate-700 transition-all text-sm border border-slate-700";
+        });
+
+        // Window startup initialize
+        window.onload = function () {
+            // Kickstart Animation Loop pipeline
+            animationLoop();
+        };
+    </script>
+</body>
+</html>
